@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Сервис скачивания и анализа файлов</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 p-6" x-data="fileApp()">
+
+    <div class="max-w-5xl mx-auto space-y-6">
+        
+        <!-- Заголовок и Блок управления скачиванием -->
+        <div class="bg-white p-6 rounded-xl shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-900">Сервис анализа файлов</h1>
+                <p class="text-sm text-slate-500 mt-1" x-show="downloadInfo.startTime">
+                    Время старта (НСК): <span class="font-semibold" x-text="downloadInfo.startTime"></span>
+                </p>
+                <p class="text-sm text-slate-600 mt-1" x-show="downloadInfo.statusText">
+                    <span x-text="downloadInfo.statusText"></span>
+                </p>
+            </div>
+            
+            <button 
+                @click="startDownloading()" 
+                :disabled="isDownloading"
+                class="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 text-white font-medium px-5 py-2.5 rounded-lg transition shadow-sm flex items-center gap-2">
+                <svg x-show="isDownloading" class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span x-text="isDownloading ? 'Скачиваем...' : 'Скачать данные'"></span>
+            </button>
+        </div>
+
+        <!-- Таблица файлов и Пагинация -->
+        <div class="bg-white p-6 rounded-xl shadow-sm space-y-4">
+            <div class="flex flex-wrap justify-between items-center gap-3">
+                <h2 class="text-lg font-semibold">Скачанные файлы</h2>
+
+                <div class="flex items-center gap-2">
+                    <button @click="selectAllGlobal()" class="text-xs bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded text-slate-700 border border-slate-300 transition">
+                        Выбрать вообще все (<span x-text="totalItems"></span>)
+                    </button>
+
+                    <!-- Кнопка с эффектом загрузки -->
+                    <button
+                        @click="calculate()"
+                        :disabled="isCalculating"
+                        class="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white text-sm font-medium px-4 py-2 rounded-lg transition shadow-sm flex items-center gap-2">
+                        <svg x-show="isCalculating" class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span x-text="isCalculating ? 'Считаем...' : 'Произвести расчёты'"></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Уведомления (Toast): зеленый для успеха, красный для ошибок -->
+            <div x-show="showToast"
+                 x-transition
+                 :class="toastMessage.includes('Ошибка') ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'"
+                 class="border px-4 py-2.5 rounded-lg text-sm flex items-center justify-between shadow-sm">
+                <div class="flex items-center gap-2">
+                    <svg x-show="!toastMessage.includes('Ошибка')" class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                    <svg x-show="toastMessage.includes('Ошибка')" class="w-5 h-5 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <span x-text="toastMessage" class="font-medium"></span>
+                </div>
+                <button @click="showToast = false" class="font-bold ml-4 opacity-60 hover:opacity-100">&times;</button>
+            </div>
+
+            <!-- Список файлов -->
+            <div class="overflow-x-auto border border-slate-200 rounded-lg">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-slate-50 text-slate-500 border-b border-slate-200">
+                        <tr>
+                            <th class="p-3 w-10">
+                                <input type="checkbox" :checked="isPageAllSelected" @change="toggleSelectPage($event.target.checked)" class="rounded">
+                            </th>
+                            <th class="p-3">Имя файла</th>
+                            <th class="p-3">Время скачивания (НСК)</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        <template x-for="item in items" :key="item.filename">
+                            <tr class="hover:bg-slate-50">
+                                <td class="p-3">
+                                    <input type="checkbox" :value="item.filename" x-model="selectedFiles" class="rounded">
+                                </td>
+                                <td class="p-3 font-mono text-slate-700" x-text="item.filename"></td>
+                                <td class="p-3 text-slate-500" x-text="item.downloaded_at"></td>
+                            </tr>
+                        </template>
+                        <template x-if="items.length === 0">
+                            <tr>
+                                <td colspan="3" class="p-4 text-center text-slate-400">Файлы пока не скачаны</td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Пагинация -->
+            <div class="flex justify-between items-center text-sm text-slate-600 pt-2">
+                <div>Страница <span x-text="currentPage"></span> из <span x-text="totalPages"></span></div>
+                <div class="space-x-1">
+                    <button @click="changePage(currentPage - 1)" :disabled="currentPage <= 1" class="px-3 py-1 border rounded disabled:opacity-40 hover:bg-slate-50">Назад</button>
+                    <button @click="changePage(currentPage + 1)" :disabled="currentPage >= totalPages" class="px-3 py-1 border rounded disabled:opacity-40 hover:bg-slate-50">Вперед</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Результаты расчетов с плашкой об успешном окончании -->
+        <div id="resultsBlock" x-show="stats" x-transition class="bg-white p-6 rounded-xl shadow-sm space-y-6 border-2 border-emerald-500/20">
+            <div class="flex justify-between items-center border-b border-slate-100 pb-4">
+                <h2 class="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                    <span>Результаты расчётов</span>
+                    <span class="bg-emerald-100 text-emerald-800 text-xs font-semibold px-2.5 py-0.5 rounded-full">Завершено</span>
+                </h2>
+            </div>
+
+            <!-- Общая статистика -->
+            <div>
+                <h3 class="text-sm font-medium text-slate-500 mb-3">Общая статистика по цифрам (всего обработано файлов: <span class="font-bold text-slate-700" x-text="stats?.processed_files_count"></span>):</h3>
+                <div class="grid grid-cols-5 sm:grid-cols-10 gap-2">
+                    <template x-for="(count, digit) in (stats?.global_stats || {})">
+                        <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 text-center">
+                            <div class="text-xs text-slate-400 font-bold" x-text="'Цифра ' + digit"></div>
+                            <div class="text-lg font-bold text-indigo-600 mt-1" x-text="count"></div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Статистика по каждому файлу -->
+            <div>
+                <h3 class="text-sm font-medium text-slate-500 mb-3">Статистика по каждому файлу:</h3>
+                <div class="max-h-64 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100 text-xs">
+                    <template x-for="(fstats, fname) in (stats?.file_stats || {})">
+                        <div class="p-3 flex justify-between items-center hover:bg-slate-50">
+                            <span class="font-mono text-slate-700 font-medium" x-text="fname"></span>
+                            <div class="flex gap-2 flex-wrap">
+                                <template x-for="(c, d) in fstats">
+                                    <span class="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600" x-text="d + ': ' + c"></span>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        function fileApp() {
+            return {
+                isDownloading: false,
+                isCalculating: false,
+                downloadInfo: { startTime: '', statusText: '' },
+                items: [],
+                totalItems: 0,
+                totalPages: 1,
+                currentPage: 1,
+                selectedFiles: [],
+                selectAllInDb: false,
+                stats: null,
+                pollInterval: null,
+                showToast: false,
+                toastMessage: '',
+
+                init() {
+                    this.loadFiles();
+                },
+
+                get isPageAllSelected() {
+                    if (!this.items.length) return false;
+                    return this.items.every(item => this.selectedFiles.includes(item.filename));
+                },
+
+                triggerToast(message) {
+                    this.toastMessage = message;
+                    this.showToast = true;
+                    setTimeout(() => {
+                        this.showToast = false;
+                    }, 4000);
+                },
+
+                async startDownloading() {
+                    this.isDownloading = true;
+                    this.downloadInfo.statusText = 'Процесс запущен, скачиваем файлы...';
+
+                    this.pollInterval = setInterval(() => {
+                        this.loadFiles();
+                    }, 3000);
+
+                    try {
+                        const res = await fetch('/api/start-download/', { method: 'POST' });
+                        const data = await res.json();
+                        if (res.ok) {
+                            this.downloadInfo.startTime = data.start_time_nsk;
+                            this.downloadInfo.statusText = `Получено ${data.names_received} имён, скачано ${data.downloaded_count} файлов. Каталог скачан полностью!`;
+                        } else {
+                            this.triggerToast('Ошибка: ' + (data.error || 'Не удалось скачать файлы'));
+                            this.downloadInfo.statusText = 'Произошла ошибка при скачивании';
+                        }
+                    } catch (e) {
+                        this.triggerToast('Произошла ошибка при скачивании');
+                        this.downloadInfo.statusText = 'Связь с сервером потеряна';
+                    } finally {
+                        this.isDownloading = false;
+                        clearInterval(this.pollInterval);
+                        this.loadFiles();
+                    }
+                },
+
+                async loadFiles() {
+                    try {
+                        const res = await fetch(`/api/files/?page=${this.currentPage}&size=10`);
+                        const data = await res.json();
+                        this.items = data.items || [];
+                        this.totalItems = data.total_items || 0;
+                        this.totalPages = data.total_pages || 1;
+
+                        if (this.selectAllInDb) {
+                            const newFilenames = this.items.map(i => i.filename);
+                            this.selectedFiles = [...new Set([...this.selectedFiles, ...newFilenames])];
+                        }
+                    } catch (e) {
+                        console.error('Ошибка при загрузке списка файлов:', e);
+                    }
+                },
+
+                changePage(page) {
+                    if (page >= 1 && page <= this.totalPages) {
+                        this.currentPage = page;
+                        this.loadFiles();
+                    }
+                },
+
+                toggleSelectPage(checked) {
+                    this.selectAllInDb = false;
+                    const pageFilenames = this.items.map(i => i.filename);
+                    if (checked) {
+                        this.selectedFiles = [...new Set([...this.selectedFiles, ...pageFilenames])];
+                    } else {
+                        this.selectedFiles = this.selectedFiles.filter(f => !pageFilenames.includes(f));
+                    }
+                },
+
+                selectAllGlobal() {
+                    this.selectAllInDb = true;
+                    const pageFilenames = this.items.map(i => i.filename);
+                    this.selectedFiles = [...new Set([...this.selectedFiles, ...pageFilenames])];
+
+                    this.triggerToast(`Выбраны абсолютно все файлы (${this.totalItems} шт.) из базы данных.`);
+                },
+
+                async calculate() {
+                    if (!this.selectAllInDb && this.selectedFiles.length === 0) {
+                        this.triggerToast('Выберите хотя бы один файл!');
+                        return;
+                    }
+
+                    this.isCalculating = true;
+
+                    try {
+                        const res = await fetch('/api/calculate/', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                filenames: this.selectedFiles,
+                                select_all_in_db: this.selectAllInDb
+                            })
+                        });
+
+                        this.stats = await res.json();
+
+                        // Сигнал пользователю об успешном окончании
+                        this.triggerToast(`Расчёт успешно окончен! Обработано файлов: ${this.stats.processed_files_count}`);
+
+                        // Автоматически плавно прокручиваем к результатам
+                        this.$nextTick(() => {
+                            document.getElementById('resultsBlock')?.scrollIntoView({ behavior: 'smooth' });
+                        });
+
+                    } catch (e) {
+                        this.triggerToast('Ошибка при вычислении статистики');
+                    } finally {
+                        this.isCalculating = false;
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
